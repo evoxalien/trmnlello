@@ -4,12 +4,6 @@
 
 A [TRMNL](https://trmnl.com) plugin that displays your Trello kanban board on your e-ink device. Shows all lists and cards including completed ones, with due dates.
 
-## Don't have a TRMNL yet?
-
-TRMNL is a low-power e-ink dashboard for calendars, to-dos, and plugins like this one. If you'd like one, using my referral link gets you a discount and sends a little my way at no extra cost to you:
-
-**[trmnl.com?ref=eggerton](https://trmnl.com?ref=eggerton)**
-
 ## Installing
 
 1. In your TRMNL dashboard, find **Trello for private boards** in the plugin marketplace and click **Install**
