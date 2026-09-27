@@ -4,6 +4,15 @@
 
 A [TRMNL](https://trmnl.com) plugin that displays your Trello kanban board on your e-ink device. Shows all lists and cards including completed ones, with due dates.
 
+## About this fork
+
+This is a personal fork of [gitstua/trmnlello](https://github.com/gitstua/trmnlello) by Stuart Eggerton, run as a private instance. Customizations by John Venzon:
+
+- **Choosing columns:** hide less relevant Trello lists from the Configure page
+- **Cards per column:** set how many cards each column shows, or show them all
+
+To run your own instance, see [DEPLOYMENT.md](DEPLOYMENT.md). The install steps below describe the original, public plugin.
+
 ## Installing
 
 1. In your TRMNL dashboard, find **Trello for private boards** in the plugin marketplace and click **Install**
