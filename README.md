@@ -19,6 +19,12 @@ TRMNL is a low-power e-ink dashboard for calendars, to-dos, and plugins like thi
 
 To switch boards later, use the **Configure** button on the plugin settings page.
 
+### Choosing columns
+
+The **Configure** page lists every column (Trello list) on your board. Untick the ones you don't want on the device and save. New lists you add in Trello are shown by default. If you untick every column, all of them are shown.
+
+If you switch to a different board, save first, then reopen **Configure** to choose that board's columns.
+
 ### Cards per column
 
 On the board picker and the **Configure** page you can set how many cards each column shows before the "+N more" line:
@@ -27,7 +33,7 @@ On the board picker and the **Configure** page you can set how many cards each c
 - **1–50**: shows that many cards in every layout.
 - **All cards**: shows every card.
 
-The setting applies to all layout sizes. If you choose more cards than fit on the screen, TRMNL cuts off the column at the bottom edge. To try a value before you save it, add `&cards=N` (or `&cards=all`) to the `/preview` URL.
+The setting applies to all layout sizes. If you choose more cards than fit on the screen, TRMNL cuts off the column at the bottom edge. To try a value before you save it, add `&cards=N` (or `&cards=all`) to the `/preview` URL. To preview hidden columns, add `&hide=` with the sample list ids, for example `&hide=3`.
 
 ## Display
 ![alt text](preview.png)
@@ -39,7 +45,7 @@ The plugin supports all four TRMNL layout sizes (full screen, half vertical, hal
 
 ## Limitations
 
-- Only tested with up to 4 columns — boards with more lists may display poorly
+- Only tested with up to 4 columns — boards with more lists may display poorly. Hide less relevant columns on the Configure page (see above)
 - Boards with a large number of cards per column are truncated. Change **Cards per column** on the Configure page to show more (see above)
 
 ## Trello permissions

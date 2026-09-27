@@ -62,6 +62,23 @@ function cardLimitField(current = '') {
       <select name="card_limit" id="card_limit">${opts}</select>`;
 }
 
+// "Columns to show" checklist for the manage page. We store the lists the user
+// hides (not the ones shown) so lists added to the board later appear by default.
+function columnsField(lists, hidden = []) {
+  if (!lists?.length) return '';
+  const hiddenSet = new Set(hidden);
+  const rows = lists.map(l => `<label class="check">
+        <input type="checkbox" name="show_list" value="${esc(l.id)}"${hiddenSet.has(l.id) ? '' : ' checked'}>
+        <span>${esc(l.name)}</span>
+        <input type="hidden" name="list_ids" value="${esc(l.id)}">
+      </label>`).join('');
+  return `<fieldset id="columns">
+      <legend>Columns to show</legend>
+      ${rows}
+    </fieldset>
+    <p id="columns-note" class="note" hidden>Save the new board first, then reopen Configure to choose its columns.</p>`;
+}
+
 function log(env, ...args) {
   if (env.DEBUG) console.log('[trmnlello]', ...args);
 }
@@ -311,6 +328,12 @@ async function handleManageGet(req, env) {
 
   const boards = await trello.getBoards(user.trello_token, user.trello_secret, env);
   log(env, 'manage: fetched boards', { uuid, count: boards.length, current_board: user.board_name });
+  const lists = user.board_id
+    ? await trello.getLists(user.board_id, user.trello_token, user.trello_secret, env).catch(err => {
+        console.error('Manage list fetch failed:', err.message);
+        return [];
+      })
+    : [];
   const options = boards.map(b =>
     `<option value="${esc(b.id)}"${b.id === user.board_id ? ' selected' : ''}>${esc(b.name)}</option>`
   ).join('');
@@ -332,21 +355,42 @@ async function handleManageGet(req, env) {
     button{width:100%;padding:12px;background:#0052cc;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-weight:600}
     button:hover{background:#0041a3}
     .success{color:#2e7d32;font-size:14px;margin-top:12px;display:none}
+    fieldset{border:1px solid #ddd;border-radius:8px;padding:8px 12px 4px;margin:0 0 16px;max-height:260px;overflow:auto}
+    legend{font-size:13px;color:#555;padding:0 4px}
+    .check{display:flex;align-items:center;gap:8px;font-size:14px;color:#222;margin:0 0 8px;cursor:pointer}
+    .check input[type=checkbox]{width:16px;height:16px;margin:0}
+    .note{font-size:13px;color:#8a6d00;margin:-8px 0 16px}
   </style>
 </head>
 <body>
   <div class="card">
     <div style="font-size:28px;margin-bottom:12px;">⬡</div>
     <h1>Trmnlello - Trello private board</h1>
-    <p>Switch which Trello board appears on your device, and how many cards each column shows.</p>
+    <p>Choose which Trello board appears on your device, which of its columns to show, and how many cards each column shows.</p>
     <form method="POST" action="/manage">
       <input type="hidden" name="uuid" value="${esc(uuid)}">
       <input type="hidden" name="jwt" value="${esc(jwt ?? '')}">
       <label for="board_id">Board</label>
       <select name="board_id" id="board_id" required>${options}</select>
+      ${columnsField(lists, user.hidden_lists)}
       ${cardLimitField(user.card_limit ?? '')}
       <button type="submit">Save</button>
     </form>
+    <script>
+      // The checklist belongs to the saved board; hide it while a different board is picked.
+      (function () {
+        var sel = document.getElementById('board_id');
+        var cols = document.getElementById('columns');
+        var note = document.getElementById('columns-note');
+        if (!cols) return;
+        var saved = sel.value;
+        sel.addEventListener('change', function () {
+          var same = sel.value === saved;
+          cols.hidden = !same;
+          note.hidden = same;
+        });
+      })();
+    </script>
   </div>
 </body>
 </html>`);
@@ -372,13 +416,24 @@ async function handleManagePost(req, env) {
   const board = boards.find(b => b.id === boardId);
   if (!board) return new Response('Board not found', { status: 400 });
 
+  // Hidden columns: lists shown on the form minus the ones left ticked.
+  // Switching boards resets this, as the old board's lists no longer apply.
+  // If every column was unticked, show them all rather than a blank screen.
+  let hiddenLists = [];
+  if (board.id === user.board_id && body.has('list_ids')) {
+    const shown = new Set(body.getAll('show_list'));
+    hiddenLists = body.getAll('list_ids').filter(id => !shown.has(id));
+    if (shown.size === 0) hiddenLists = [];
+  }
+
   const updated = {
     ...user,
     board_id: board.id,
     board_name: board.name,
     card_limit: markup.normaliseCardLimit(body.get('card_limit')),
+    hidden_lists: hiddenLists,
   };
-  log(env, 'manage: board updated', { uuid, board_name: board.name, card_limit: updated.card_limit });
+  log(env, 'manage: board updated', { uuid, board_name: board.name, card_limit: updated.card_limit, hidden: hiddenLists.length });
   await kvPut(env.KV, userKey(user.access_token), updated);
   await kvPut(env.KV, `uuid:${uuid}`, updated);
   if (user.user_uuid)         await kvPut(env.KV, `uuid:${user.user_uuid}`, updated);
@@ -436,8 +491,11 @@ async function handleMarkup(req, env) {
   }
 
   try {
-    const lists = await trello.getBoardData(user.board_id, user.trello_token, user.trello_secret, env);
-    log(env, 'markup: board data fetched', { lists: lists.length });
+    const allLists = await trello.getBoardData(user.board_id, user.trello_token, user.trello_secret, env);
+    const hidden = new Set(user.hidden_lists ?? []);
+    let lists = allLists.filter(l => !hidden.has(l.id));
+    if (lists.length === 0) lists = allLists; // never render an empty board
+    log(env, 'markup: board data fetched', { lists: allLists.length, shown: lists.length });
     const timezone = trmnlMeta.user?.time_zone_iana ?? 'UTC';
     log(env, 'markup: using timezone', { timezone, source: trmnlMeta.user?.time_zone_iana ? 'trmnl' : 'UTC fallback' });
     // Extend TTL once per day — avoids burning KV write quota on every poll.
@@ -513,6 +571,9 @@ function handlePreview(req) {
   // Optional ?cards=N|all to preview the "Cards per column" setting
   const cardsParam = markup.normaliseCardLimit(url.searchParams.get('cards'));
   const cardLimit = markup.parseCardLimit(cardsParam);
+  // Optional ?hide=1,3 to preview hiding columns (sample list ids 1–3)
+  const hideParam = url.searchParams.get('hide') ?? '';
+  const hideIds = new Set(hideParam.split(',').map(s => s.trim()).filter(Boolean));
 
   const now = new Date();
   const yesterday = new Date(now.getTime() - 86400000).toISOString();
@@ -555,12 +616,14 @@ function handlePreview(req) {
   ];
 
   const boardName = 'Sample Board (Preview)';
+  const visibleLists = sampleLists.filter(l => !hideIds.has(l.id));
+  const previewLists = visibleLists.length ? visibleLists : sampleLists;
 
   const layouts = {
-    full: markup.full(boardName, sampleLists, undefined, cardLimit),
-    half_vertical: markup.halfVertical(boardName, sampleLists, undefined, cardLimit),
-    half_horizontal: markup.halfHorizontal(boardName, sampleLists, undefined, cardLimit),
-    quadrant: markup.quadrant(boardName, sampleLists, undefined, cardLimit),
+    full: markup.full(boardName, previewLists, undefined, cardLimit),
+    half_vertical: markup.halfVertical(boardName, previewLists, undefined, cardLimit),
+    half_horizontal: markup.halfHorizontal(boardName, previewLists, undefined, cardLimit),
+    quadrant: markup.quadrant(boardName, previewLists, undefined, cardLimit),
   };
 
   const active = layouts[layout] ? layout : 'full';
@@ -590,7 +653,7 @@ function handlePreview(req) {
   const xScale  = 800 / 1872;
 
   const navLink = (id, label) =>
-    `<a href="?layout=${id}${cardsParam ? `&cards=${cardsParam}` : ''}" style="color:${active === id ? '#fff' : '#adf'};text-decoration:${active === id ? 'underline' : 'none'};font-size:12px;">${label}</a>`;
+    `<a href="?layout=${id}${cardsParam ? `&cards=${cardsParam}` : ''}${hideIds.size ? `&hide=${encodeURIComponent(hideParam)}` : ''}" style="color:${active === id ? '#fff' : '#adf'};text-decoration:${active === id ? 'underline' : 'none'};font-size:12px;">${label}</a>`;
 
   const deviceLabel = (name, spec) =>
     `<div style="font-family:system-ui,sans-serif;margin-bottom:4px;">
