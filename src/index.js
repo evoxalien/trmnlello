@@ -51,6 +51,17 @@ function esc(s) {
     .replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// "Cards per column" dropdown shared by the board-select and manage pages.
+function cardLimitField(current = '') {
+  const choices = [['', 'Auto (fit to layout)'], ['all', 'All cards']];
+  for (let n = 1; n <= markup.CARD_LIMIT_MAX; n++) choices.push([String(n), String(n)]);
+  const opts = choices.map(([v, label]) =>
+    `<option value="${v}"${v === current ? ' selected' : ''}>${label}</option>`
+  ).join('');
+  return `<label for="card_limit">Cards per column</label>
+      <select name="card_limit" id="card_limit">${opts}</select>`;
+}
+
 function log(env, ...args) {
   if (env.DEBUG) console.log('[trmnlello]', ...args);
 }
@@ -214,7 +225,9 @@ async function handleBoardSelectGet(req, env) {
     <p>Choose which Trello board to display on your TRMNL device.</p>
     <form method="POST" action="/board-select">
       <input type="hidden" name="t" value="${esc(accessToken)}">
+      <label for="board_id">Board</label>
       <select name="board_id" id="board_id" required>${options}</select>
+      ${cardLimitField(user.card_limit ?? '')}
       <button type="submit">Connect Board</button>
     </form>
     <div class="disclaimer">
@@ -245,6 +258,7 @@ async function handleBoardSelectPost(req, env) {
     ...user,
     board_id: board.id,
     board_name: board.name,
+    card_limit: markup.normaliseCardLimit(body.get('card_limit')),
   });
 
   log(env, 'board selected', { board_name: board.name });
@@ -324,11 +338,13 @@ async function handleManageGet(req, env) {
   <div class="card">
     <div style="font-size:28px;margin-bottom:12px;">⬡</div>
     <h1>Trmnlello - Trello private board</h1>
-    <p>Switch which Trello board appears on your device.</p>
+    <p>Switch which Trello board appears on your device, and how many cards each column shows.</p>
     <form method="POST" action="/manage">
       <input type="hidden" name="uuid" value="${esc(uuid)}">
       <input type="hidden" name="jwt" value="${esc(jwt ?? '')}">
+      <label for="board_id">Board</label>
       <select name="board_id" id="board_id" required>${options}</select>
+      ${cardLimitField(user.card_limit ?? '')}
       <button type="submit">Save</button>
     </form>
   </div>
@@ -356,8 +372,13 @@ async function handleManagePost(req, env) {
   const board = boards.find(b => b.id === boardId);
   if (!board) return new Response('Board not found', { status: 400 });
 
-  const updated = { ...user, board_id: board.id, board_name: board.name };
-  log(env, 'manage: board updated', { uuid, board_name: board.name });
+  const updated = {
+    ...user,
+    board_id: board.id,
+    board_name: board.name,
+    card_limit: markup.normaliseCardLimit(body.get('card_limit')),
+  };
+  log(env, 'manage: board updated', { uuid, board_name: board.name, card_limit: updated.card_limit });
   await kvPut(env.KV, userKey(user.access_token), updated);
   await kvPut(env.KV, `uuid:${uuid}`, updated);
   if (user.user_uuid)         await kvPut(env.KV, `uuid:${user.user_uuid}`, updated);
@@ -439,7 +460,7 @@ async function handleMarkup(req, env) {
       blobs: ['render', timezone],
       doubles: [1, lists.length, cardCount],
     });
-    return json(markup.allLayouts(user.board_name, lists, timezone));
+    return json(markup.allLayouts(user.board_name, lists, timezone, markup.parseCardLimit(user.card_limit)));
   } catch (err) {
     console.error('Markup fetch failed:', err.message);
     const errHtml = markup.error('Could not fetch board data. Please try again later.');
@@ -489,6 +510,9 @@ async function handleUninstall(req, env) {
 function handlePreview(req) {
   const url = new URL(req.url);
   const layout = url.searchParams.get('layout') ?? 'full';
+  // Optional ?cards=N|all to preview the "Cards per column" setting
+  const cardsParam = markup.normaliseCardLimit(url.searchParams.get('cards'));
+  const cardLimit = markup.parseCardLimit(cardsParam);
 
   const now = new Date();
   const yesterday = new Date(now.getTime() - 86400000).toISOString();
@@ -533,10 +557,10 @@ function handlePreview(req) {
   const boardName = 'Sample Board (Preview)';
 
   const layouts = {
-    full: markup.full(boardName, sampleLists),
-    half_vertical: markup.halfVertical(boardName, sampleLists),
-    half_horizontal: markup.halfHorizontal(boardName, sampleLists),
-    quadrant: markup.quadrant(boardName, sampleLists),
+    full: markup.full(boardName, sampleLists, undefined, cardLimit),
+    half_vertical: markup.halfVertical(boardName, sampleLists, undefined, cardLimit),
+    half_horizontal: markup.halfHorizontal(boardName, sampleLists, undefined, cardLimit),
+    quadrant: markup.quadrant(boardName, sampleLists, undefined, cardLimit),
   };
 
   const active = layouts[layout] ? layout : 'full';
@@ -566,7 +590,7 @@ function handlePreview(req) {
   const xScale  = 800 / 1872;
 
   const navLink = (id, label) =>
-    `<a href="?layout=${id}" style="color:${active === id ? '#fff' : '#adf'};text-decoration:${active === id ? 'underline' : 'none'};font-size:12px;">${label}</a>`;
+    `<a href="?layout=${id}${cardsParam ? `&cards=${cardsParam}` : ''}" style="color:${active === id ? '#fff' : '#adf'};text-decoration:${active === id ? 'underline' : 'none'};font-size:12px;">${label}</a>`;
 
   const deviceLabel = (name, spec) =>
     `<div style="font-family:system-ui,sans-serif;margin-bottom:4px;">

@@ -19,6 +19,16 @@ TRMNL is a low-power e-ink dashboard for calendars, to-dos, and plugins like thi
 
 To switch boards later, use the **Configure** button on the plugin settings page.
 
+### Cards per column
+
+On the board picker and the **Configure** page you can set how many cards each column shows before the "+N more" line:
+
+- **Auto** (default): fits the layout. Full screen shows 8 cards with 3 or fewer lists, 6 with 4 lists, 4 with 5 lists and 3 with 6 lists. Half vertical shows 4, half horizontal 2 and quadrant 3.
+- **1–50**: shows that many cards in every layout.
+- **All cards**: shows every card.
+
+The setting applies to all layout sizes. If you choose more cards than fit on the screen, TRMNL cuts off the column at the bottom edge. To try a value before you save it, add `&cards=N` (or `&cards=all`) to the `/preview` URL.
+
 ## Display
 ![alt text](preview.png)
 The board is shown as a kanban — one column per list, cards stacked within each. Due dates are shown in red if overdue (gray on black-and-white devices). Completed cards (due date ticked, or all checklist items checked) are shown with a strikethrough.
@@ -30,7 +40,7 @@ The plugin supports all four TRMNL layout sizes (full screen, half vertical, hal
 ## Limitations
 
 - Only tested with up to 4 columns — boards with more lists may display poorly
-- Boards with a large number of cards per column will be truncated; only the first several cards are shown
+- Boards with a large number of cards per column are truncated. Change **Cards per column** on the Configure page to show more (see above)
 
 ## Trello permissions
 
